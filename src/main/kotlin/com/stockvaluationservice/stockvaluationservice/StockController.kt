@@ -14,7 +14,7 @@ class StockController {
         log.info("Stock quote queried")
         return StockQuote(
             ticker = "AAPL",
-            lastPrice = 100.02,
+            lastPrice = 100.05,
         )
     }
 
