@@ -9,7 +9,7 @@ class StockController {
     fun getStock(): StockQuote {
         return StockQuote(
             ticker = "AAPL",
-            lastPrice = 100.03,
+            lastPrice = 100.02,
         )
     }
 
