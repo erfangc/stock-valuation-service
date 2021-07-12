@@ -3,6 +3,7 @@ package com.stockvaluationservice.stockvaluationservice
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
+import kotlin.random.Random
 
 @RestController
 class StockController {
@@ -14,7 +15,7 @@ class StockController {
         log.info("Stock quote queried")
         return StockQuote(
             ticker = "AAPL",
-            lastPrice = 100.05,
+            lastPrice = Random.nextDouble() * 100,
         )
     }
 
