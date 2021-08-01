@@ -20,6 +20,7 @@ class InitSvc {
 
     init {
         try {
+            log.info("Attempting to test Elasticsearch domain")
             val client = RestHighLevelClient(
                 RestClient.builder(
                     HttpHost(
