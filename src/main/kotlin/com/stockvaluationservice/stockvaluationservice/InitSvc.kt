@@ -54,7 +54,7 @@ class InitSvc {
             }
 
             val getResponse = client.get(GetRequest("people").id(id), RequestOptions.DEFAULT)
-            log.info("Getting the document back: ${getResponse.fields}")
+            log.info("Getting the document back: ${getResponse.source}")
 
             client.close()
         } catch (ex: Exception) {
