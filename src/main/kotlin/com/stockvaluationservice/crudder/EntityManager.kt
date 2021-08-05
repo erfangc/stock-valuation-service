@@ -57,7 +57,7 @@ class EntityManager<T>(
         /*
         Index the document
          */
-        indexDocument(id.toString(), jsonNode.toString())
+        indexDocument(id, jsonNode.toString())
     }
 
     fun update(entity: T) {
