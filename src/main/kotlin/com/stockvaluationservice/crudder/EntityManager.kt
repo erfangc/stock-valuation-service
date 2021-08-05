@@ -1,8 +1,10 @@
 package com.stockvaluationservice.crudder
 
 import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.action.delete.DeleteRequest
@@ -20,7 +22,7 @@ import software.amazon.awssdk.enhanced.dynamodb.TableSchema
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey
 
 class EntityManager<T>(
-    private val dynamoDbEnhancedClient: DynamoDbEnhancedClient,
+    dynamoDbEnhancedClient: DynamoDbEnhancedClient,
     private val restHighLevelClient: RestHighLevelClient,
     private val clazz: Class<T>,
     private val tableName: String,
@@ -43,7 +45,6 @@ class EntityManager<T>(
 
     fun create(entity: T, permissions: List<Permission> = emptyList()) {
         val id = resolveEntityId(entity)
-
         /*
         DynamoDB PutItem operation
          */
@@ -60,25 +61,64 @@ class EntityManager<T>(
         indexDocument(id, jsonNode.toString())
     }
 
-    fun update(entity: T) {
-        val id = resolveEntityId(entity)
-        val getResponse = getDocument(id) ?: error("...")
-        val jsonNode = objectMapper.readTree(getResponse.sourceAsString)
-        if (jsonNode.isObject) {
-            val objectNode = jsonNode as ObjectNode
-            val arrayNode = objectNode.withArray("permissions")
-            //
-        }
-    }
-
     fun grantPermission(permission: Permission) {
-        val id = permission.resourceId ?: error("...")
-        val getResponse = getDocument(id) ?: error("...")
+        val id = permission.resourceId ?: error("resourceId cannot be blank")
+        val getResponse = getDocument(id)
+        val jsonNode = getResponse.asJson()
+        val permissions = jsonNode.withArray<ArrayNode>("permissions")
+        permissions.add("${permission.subject}:${permission.action}")
+        updateDocument(id= id, source = jsonNode.toString(), getResponse = getResponse)
     }
 
     fun revokePermission(permission: Permission) {
-        val id = permission.resourceId ?: error("...")
+        val id = permission.resourceId ?: error("resourceId cannot be blank")
         val getResponse = getDocument(id)
+        val jsonNode = getResponse.asJson()
+        val permissions = jsonNode.withArray<ArrayNode>("permissions")
+        permissions.removeElement("${permission.subject}:${permission.action}")
+        updateDocument(id= id, source = jsonNode.toString(), getResponse = getResponse)
+    }
+
+    fun update(entity: T) {
+        val id = resolveEntityId(entity)
+        val getResponse = getDocument(id)
+
+        val newNode = objectMapper.valueToTree<ObjectNode>(entity)
+        newNode.copyArrayProperty(
+            from = getResponse.asJson(),
+            propertyName = "permissions",
+        )
+
+        updateDocument(
+            id = id,
+            source = newNode.toString(),
+            getResponse = getResponse
+        )
+    }
+
+    private fun GetResponse.asJson() = objectMapper.readTree(this.sourceAsString)
+
+    private fun ArrayNode.removeElement(element: String) {
+        this.forEachIndexed { index, node ->
+            if (node.isTextual && node.textValue() == element) {
+                this.remove(index)
+            }
+        }
+    }
+
+    private fun JsonNode.copyArrayProperty(
+        from: JsonNode,
+        propertyName: String,
+    ) {
+        if (!from.isObject || !this.isObject) {
+            return
+        }
+        val arrayNode = (from as ObjectNode).withArray(propertyName)
+        // copy permissions from the old object to the new
+        val permissions = (this as ObjectNode).withArray(propertyName)
+        arrayNode.forEach { permission ->
+            permissions.add(permission)
+        }
     }
 
     private fun jsonifyWithPermissionAttachment(entity: T, permissions: List<Permission>): ObjectNode {
@@ -90,12 +130,12 @@ class EntityManager<T>(
         return objectNode
     }
 
-    private fun getDocument(id: String): GetResponse? {
+    private fun getDocument(id: String): GetResponse {
         val getResponse = restHighLevelClient.get(GetRequest(tableName).id(id), RequestOptions.DEFAULT)
         return if (getResponse.isExists) {
             getResponse
         } else {
-            null
+            error("document with id $id cannot be found in index $tableName")
         }
     }
 
