@@ -1,18 +1,18 @@
 package com.stockvaluationservice.stockvaluationservice.requestlogging
 
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
-import org.slf4j.LoggerFactory
-import org.springframework.http.MediaType.APPLICATION_JSON
-import org.springframework.http.MediaType.APPLICATION_JSON_VALUE
+import com.stockvaluationservice.stockvaluationservice.requestlogging.consumer.RequestQueue
+import com.stockvaluationservice.stockvaluationservice.requestlogging.consumer.RequestQueueConsumer
+import com.stockvaluationservice.stockvaluationservice.requestlogging.consumer.RequestQueueConsumer.Companion.requestQueue
+import com.stockvaluationservice.stockvaluationservice.requestlogging.consumer.ResponseQueue
+import com.stockvaluationservice.stockvaluationservice.requestlogging.consumer.ResponseQueueConsumer
+import com.stockvaluationservice.stockvaluationservice.requestlogging.consumer.ResponseQueueConsumer.Companion.responseQueue
 import org.springframework.stereotype.Component
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
-import javax.annotation.PostConstruct
-import javax.servlet.*
+import javax.servlet.Filter
+import javax.servlet.FilterChain
+import javax.servlet.ServletRequest
+import javax.servlet.ServletResponse
 import javax.servlet.http.HttpServletRequest
-import javax.servlet.http.HttpServletResponse
 
 /**
  * This filter wraps around the execution of HTTP requests and perform the following tasks:
@@ -25,86 +25,25 @@ import javax.servlet.http.HttpServletResponse
  * without encountering a "stream is closed" error
  *
  * 3. Push the request object into a queue to be logged permanently into DynamoDB/Elasticsearch for auditing purposes
- *
- * TODO
- * 1 - How to serialize properly in DynamoDB?
- * 2 - Role mapping ... ?
- * 3 - Would CachedRequest crash on multipart file upload?
  */
 @Component
 class RequestLoggingFilter(
-    private val threadLocalRequestId: ThreadLocalRequestId
+    private val threadLocalRequestId: ThreadLocalRequestId,
+    requestQueueConsumer: RequestQueueConsumer,
+    responseQueueConsumer: ResponseQueueConsumer,
 ) : Filter {
 
-    private val log = LoggerFactory.getLogger(RequestLoggingFilter::class.java)
-    private val requestQueue = ArrayBlockingQueue<RequestQueue>(2000)
-    private val responseQueue = ArrayBlockingQueue<ResponseQueue>(2000)
-
     private val executor = Executors.newFixedThreadPool(2)
-    private val objectMapper = ObjectMapper()
-        .findAndRegisterModules()
-        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-
-    init {
-        Runtime.getRuntime().addShutdownHook(
-            Thread {
-                executor.shutdown()
-            }
-        )
-    }
 
     /**
-     * TODO move the consumer into their own classes
+     * The initialization block that starts the queue consumers
      */
-    @PostConstruct
-    fun init0() {
-        executor.submit {
-            while (true) {
-                try {
-                    val queueElement = requestQueue.take()
-                    val request = queueElement.request as HttpServletRequest
-                    val requestId = queueElement.requestId
-                    val eventId = queueElement.eventId
-
-                    val bodyIsJson = request.contentType == APPLICATION_JSON_VALUE
-                    val requestBody = if (bodyIsJson)
-                        objectMapper.readTree(request.inputStream)
-                    else
-                        null
-
-                    log.info(
-                        "Processing request " +
-                                "requestURI=${request.requestURI} " +
-                                "method=${request.method} " +
-                                "requestId=${requestId} " +
-                                "eventId=${eventId} " +
-                                "requestBody=$requestBody "
-                    )
-                } catch (ex: Exception) {
-                    log.error("Cannot write request", ex)
-                }
-            }
-        }
-        executor.submit {
-            while (true) {
-                try {
-                    val queueElement = responseQueue.take()
-                    val response = queueElement.response as HttpServletResponse
-                    val requestId = queueElement.requestId
-                    val processingTimeMillis = queueElement.processingTimeMillis
-                    val eventId = queueElement.eventId
-                    val status = response.status
-
-                    log.info(
-                        "Processed request " +
-                                "requestId=${requestId} eventId=$eventId status=$status processingTimeMillis=$processingTimeMillis"
-                    )
-                } catch (ex: Exception) {
-                    log.error("Cannot write request", ex)
-                }
-            }
-        }
+    init {
+        Runtime.getRuntime().addShutdownHook(
+            Thread { executor.shutdown() }
+        )
+        executor.submit(requestQueueConsumer)
+        executor.submit(responseQueueConsumer)
     }
 
     /**

@@ -1,4 +1,4 @@
-package com.stockvaluationservice.stockvaluationservice.requestlogging
+package com.stockvaluationservice.stockvaluationservice.requestlogging.consumer
 
 import java.time.Instant
 import java.util.*
