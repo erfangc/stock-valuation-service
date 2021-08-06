@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import org.slf4j.LoggerFactory
+import org.springframework.http.MediaType.APPLICATION_JSON
+import org.springframework.http.MediaType.APPLICATION_JSON_VALUE
 import org.springframework.stereotype.Component
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
@@ -12,8 +14,16 @@ import javax.servlet.*
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 
+/**
+ * TODO
+ * 1 - How to serialize properly in DynamoDB?
+ * 2 - Role mapping ... ?
+ * 3 - Would CachedRequest crash on multipart file upload?
+ */
 @Component
-class RequestLoggingFilter(private val threadLocalRequestId: ThreadLocalRequestId) : Filter {
+class RequestLoggingFilter(
+    private val threadLocalRequestId: ThreadLocalRequestId
+) : Filter {
 
     private val log = LoggerFactory.getLogger(RequestLoggingFilter::class.java)
     private val requestQueue = ArrayBlockingQueue<RequestQueue>(2000)
@@ -26,9 +36,11 @@ class RequestLoggingFilter(private val threadLocalRequestId: ThreadLocalRequestI
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 
     init {
-        Runtime.getRuntime().addShutdownHook(Thread {
-            executor.shutdown()
-        })
+        Runtime.getRuntime().addShutdownHook(
+            Thread {
+                executor.shutdown()
+            }
+        )
     }
 
     @PostConstruct
@@ -40,13 +52,20 @@ class RequestLoggingFilter(private val threadLocalRequestId: ThreadLocalRequestI
                     val request = queueElement.request as HttpServletRequest
                     val requestId = queueElement.requestId
                     val eventId = queueElement.eventId
+
+                    val bodyIsJson = request.contentType == APPLICATION_JSON_VALUE
+                    val requestBody = if (bodyIsJson)
+                        objectMapper.readTree(request.inputStream)
+                    else
+                        null
+
                     log.info(
                         "Processing request " +
                                 "requestURI=${request.requestURI} " +
                                 "method=${request.method} " +
                                 "requestId=${requestId} " +
                                 "eventId=${eventId} " +
-                                "requestBody=${objectMapper.readTree(request.inputStream)} "
+                                "requestBody=$requestBody "
                     )
                 } catch (ex: Exception) {
                     log.error("Cannot write request", ex)
