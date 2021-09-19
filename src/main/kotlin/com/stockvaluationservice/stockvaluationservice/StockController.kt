@@ -12,6 +12,11 @@ class StockController {
 
     private val log = LoggerFactory.getLogger(StockController::class.java)
 
+    init {
+        val secret = System.getenv("SOME_SECRET")
+        log.info("***SECRET***: $secret")
+    }
+
     @GetMapping("/stock-valuation-service")
     fun getStock(): StockQuote {
         log.info("Stock quote queried")

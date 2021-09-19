@@ -19,6 +19,10 @@
       ],
       "cpu": 128,
       "environment": [],
+      "secrets": [{
+        "name": "SOME_SECRET",
+        "valueFrom": "arn:aws:secretsmanager:us-east-1:299541157397:secret:some-secret-p7BDGZ"
+      }],
       "mountPoints": [],
       "memory": 256,
       "volumesFrom": [],
